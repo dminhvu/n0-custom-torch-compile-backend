@@ -148,3 +148,6 @@ Score 0 / 1.5 / 2.5 per question — zero if you'd have to look it up.
 - 2026-09-23 · Autograder `grader/` (99 checks, rubric A1–C2 = 70 pts) + pass stubs with the
   contract. Validated: hidden reference 70/70, every planted bug (mutation test) loses points; reference deleted.
   Learned: torch's `eliminate_dead_code` erases in-place `call_method`s; Dynamo lifts params to placeholders.
+- 2026-09-26 · M1/M2 started: backend registered as "n0", DCE reverse walk (grader 21.5/70). Stuck:
+  `optimize` passes `gm` where `dce` takes a `Graph` (breaks all of A1), no bool returns, no fixpoint,
+  no `recompile`, DCE has no side-effect check (in-place, `_assert`, `setitem` erased). No `tests/` yet.
