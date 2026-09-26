@@ -11,6 +11,9 @@ Read `PLAN.md` first. It holds the spec, milestones, rubric and the session log.
 - Fine to write on request: pytest scaffolding, test *modules* (small `nn.Module`s with known
   dead/constant/duplicate work), the README skeleton, shell/uv commands.
 - When reviewing, grade against the rubric in `PLAN.md` section by section; name the rubric line.
+- `grader/` is the autograder (Claude-maintained): it scores A1–C2. Its hints point at concepts,
+  never at code. Never put reference-solution code in the repo, the grader or chat; validate
+  grader changes against a hidden reference in the scratchpad (subagent), then delete it.
 - After each session, append one log line to `PLAN.md` and tick milestones — do this before
   anything else at the end of a session.
 - Scope guard in `PLAN.md` is binding: no Triton, no codegen, no aten lowering, no dynamic shapes.

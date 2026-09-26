@@ -21,6 +21,9 @@ Not a graph printer: the three passes are what make it an optimizer (career plan
   "can you answer *how?* and *why that way?* twice deep" — that only holds for code you wrote.
 - Commit after each milestone with a message that says what the pass does and one thing you learned.
 - Log each session at the bottom of this file. Two lines is enough.
+- **Autograder:** `uv run python -m grader` scores A1–C2 (70 of 100 points) after every change,
+  with a hint per failed check; `uv run python -m grader dce` runs only matching checks. C3 and D
+  (30) stay manual. The grader is Claude's; `tests/` is yours (it's graded in C2).
 
 ## Spec
 
@@ -41,13 +44,22 @@ backend(gm: torch.fx.GraphModule, example_inputs: list[Tensor]) -> Callable
 |---|---|---|
 | **DCE** | Walk nodes in reverse; erase `call_*` nodes with no users. Treat the FX graph as one SSA basic block (`node.users` = def-use chain, CC deck on SSA). | Delete side-effecting nodes: in-place ops (`add_`, `copy_`, …), `placeholder`, `output`. Check `torch.fx.node._side_effectful_functions` and the `_` suffix convention. |
 | **Constant folding** | Fold a node when every tensor input is a compile-time constant (`get_attr` of a buffer/param or a Python literal). Evaluate once, `register_buffer` the result, replace with `get_attr`. | Fold nondeterministic ops (`rand*`, `randn`, dropout in train mode), side-effecting ops, or anything producing a tensor bigger than a size cap (pick one, justify it). |
-| **CSE** | Value-number each pure node by `(op, target, args-with-Node→id, kwargs)`; replace duplicates with `replace_all_uses_with`. | Merge impure nodes, or nodes whose args differ only in kwargs, dtype, device. Lists in args must be canonicalised (tuple) before hashing. |
+| **CSE** | Value-number each pure node by `(op, target, args-with-Node→id, kwargs)`; replace duplicates with `replace_all_uses_with`. | Merge impure nodes, or nodes whose args differ only in kwargs, dtype, device. Merge nodes that read memory an in-place op wrote to in between. List args must compare by value (check what type FX actually stores them as). |
 
 **Known trade-off to document, not hide:** folding over parameters bakes weights in — it is
 only valid for inference (this is what Inductor calls *freezing*). Say so in the README.
 
 **Compare against the reference:** after your DCE, run `gm.graph.eliminate_dead_code()` and
 assert it finds nothing left. Same idea with `torch.fx.passes` for CSE if it exists in your version.
+
+**Verified on torch 2.14 (2026-09-23):**
+- `eliminate_dead_code()` erases an unused `y.add_(1)` (`call_method` in-place ops report
+  `is_impure() == False`), which changes the result. It assumes functional graphs; yours are
+  not. So "finds nothing left" means *nothing except in-place nodes*. Worth a paragraph in the blog post.
+- Dynamo always inlines `nn.Module`s and lifts parameters/buffers to **placeholders**, so
+  parameter-only subexpressions are not foldable in the graph your backend receives. They are
+  `get_attr` only under `fx.symbolic_trace`. `torch.ones(3)` shows up as a node under Dynamo;
+  `symbolic_trace` evaluates it at trace time.
 
 ## Milestones
 
@@ -133,3 +145,6 @@ Score 0 / 1.5 / 2.5 per question — zero if you'd have to look it up.
 <!-- date · what got done · one thing learned / one thing stuck -->
 
 - 2026-09-18 · M0: repo, uv, torch CPU, this plan. Start coding 19 or 22 Sep.
+- 2026-09-23 · Autograder `grader/` (99 checks, rubric A1–C2 = 70 pts) + pass stubs with the
+  contract. Validated: hidden reference 70/70, every planted bug (mutation test) loses points; reference deleted.
+  Learned: torch's `eliminate_dead_code` erases in-place `call_method`s; Dynamo lifts params to placeholders.

@@ -15,6 +15,10 @@ torch = { index = "pytorch" }
 name = "pytorch"
 url = "https://download.pytorch.org/whl/cpu"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]   # your tests; the grader is run separately: `uv run python -m grader`
+pythonpath = ["."]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
