@@ -28,7 +28,10 @@ def _case(name: str) -> M.Case:
 def test_const_chain():
     """torch.ones(3, 3) * 2 + 1 folds to a single get_attr, recursively"""
     gm, ex, eager = build(_case("ConstChain"))
-    assert _fold(gm) is True, "fold_constants changed the graph but did not return True"
+    assert _fold(gm) is True, (
+        "fold_constants returned False, but torch.ones(3, 3) * 2 + 1 has no runtime inputs — "
+        "did the pass look at any node?"
+    )
     live = calls(gm, live_only=True)
     assert len(live) == 1, (
         f"still computed at runtime: {fmt(live)} — only x + <const> should be. "

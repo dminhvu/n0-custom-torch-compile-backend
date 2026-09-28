@@ -1,6 +1,7 @@
 # N0 — custom `torch.compile` backend
 
-Started 2026-09-18 · Deadline **Sun 27 Sep 2026** (hard: N1 starts in October, lectures 13 Oct)
+Started 2026-09-18 · Deadline **Wed 30 Sep 2026** — extended on 27 Sep from Sun 27 Sep, once
+(hard: N1 starts in October, lectures 13 Oct)
 Budget: **one weekend of code + one evening of write-up.** If it runs past two weekends, cut scope, don't extend.
 
 Roadmap context: `~/.claude/career-plan.md` → "Project roadmap". N0 is the first of N0–N3 and
@@ -151,3 +152,7 @@ Score 0 / 1.5 / 2.5 per question — zero if you'd have to look it up.
 - 2026-09-26 · M1/M2 started: backend registered as "n0", DCE reverse walk (grader 21.5/70). Stuck:
   `optimize` passes `gm` where `dce` takes a `Graph` (breaks all of A1), no bool returns, no fixpoint,
   no `recompile`, DCE has no side-effect check (in-place, `_assert`, `setitem` erased). No `tests/` yet.
+- 2026-09-27/28 · DCE complete (B1 10/10, A3, A4 green); `tests/test_dce.py` = Claude's worked example +
+  2 stubs for you (M2 ticks when those are filled). Deadline → Wed 30 Sep. Fold started: B2 3/10, total 24.7/70.
+  Learned: reverse walk is enough because the node list is a topological order; Dynamo's `gm.training`
+  is always True. Stuck: which nodes are foldable — value map vs. rewritten nodes, get_attr refolded, rand/mutated consts folded.

@@ -15,9 +15,10 @@ from n0.passes import optimize
 
 
 def n0_backend(gm: fx.GraphModule, example_inputs: list[torch.Tensor]) -> Callable:
-    print(gm.graph.nodes)
+    print(gm.graph)
     gm = optimize(gm)
-    print(gm.graph.nodes)
+    gm.recompile()
+    print(gm.graph)
     return gm.forward
 
 torch._dynamo.register_backend(n0_backend, name="n0")
