@@ -1,7 +1,7 @@
 # N0 — custom `torch.compile` backend
 
-Started 2026-09-18 · Deadline **Wed 30 Sep 2026** — extended on 27 Sep from Sun 27 Sep, once
-(hard: N1 starts in October, lectures 13 Oct)
+Started 2026-09-18 · Deadline **Sat 3 Oct 2026** — extended twice: 27 Sep → 30 Sep (on 27 Sep),
+30 Sep → 3 Oct (on 30 Sep). (hard: N1 starts in October, lectures 13 Oct)
 Budget: **one weekend of code + one evening of write-up.** If it runs past two weekends, cut scope, don't extend.
 
 Roadmap context: `~/.claude/career-plan.md` → "Project roadmap". N0 is the first of N0–N3 and
@@ -156,3 +156,7 @@ Score 0 / 1.5 / 2.5 per question — zero if you'd have to look it up.
   2 stubs for you (M2 ticks when those are filled). Deadline → Wed 30 Sep. Fold started: B2 3/10, total 24.7/70.
   Learned: reverse walk is enough because the node list is a topological order; Dynamo's `gm.training`
   is always True. Stuck: which nodes are foldable — value map vs. rewritten nodes, get_attr refolded, rand/mutated consts folded.
+- 2026-09-30 · Fold rewritten as evaluate-then-rewrite (B2 5/10, total 26.7/70). Deadline → Sat 3 Oct (2nd
+  extension; breaks "no third weekend"). Learned: keep one source of truth for constness — evaluate into a
+  Node→value map, rewrite after. Stuck: constness check still reads `op == get_attr` not the map; loop 2
+  re-buffers get_attrs (A2); `call_method` obj unmapped; MutatedConst; cap is float. `optimize` still unwritten (20 pts).
