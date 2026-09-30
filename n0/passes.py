@@ -11,7 +11,8 @@ import torch.fx as fx
 import torch.fx.node
 
 # Largest tensor fold_constants may produce, in elements (numel). Justify the value here.
-FOLD_SIZE_CAP: int = 0  # TODO
+FOLD_SIZE_CAP: int = 1e6  # TODO
+NON_FOLDABLE_METHODS = ["rand", "randn", "randint", "randperm", "randperm", "rand_like", "bernoulli", "dropout"]
 
 def _is_side_effecting_node(node: fx.Node) -> bool:
     op_name = node.target if isinstance(node.target, str) else node.target.__name__
@@ -19,13 +20,17 @@ def _is_side_effecting_node(node: fx.Node) -> bool:
     return True if op_name.endswith("_") or node.is_impure() else False
 
 def _is_foldable_node(node: fx.Node) -> bool:
+    if _is_side_effecting_node(node):
+        return False
+    op_name = node.target if isinstance(node.target, str) else node.target.__name__
+    if op_name in NON_FOLDABLE_METHODS:
+        return False
     input_nodes = node.all_input_nodes
-    is_foldable = not _is_side_effecting_node(node)
     for node in input_nodes:
         if not node.op == 'get_attr':
-            is_foldable = False
-            break
-    return is_foldable
+            return False
+
+    return True
 
 def dce(graph: fx.Graph) -> bool:
     dead_code_found = False
@@ -42,36 +47,41 @@ def cse(graph: fx.Graph) -> bool:
     raise NotImplementedError
 
 
+
 def fold_constants(gm: fx.GraphModule) -> bool:
     foldable_node_found = False
     d = {}
     node: fx.Node
+    def map_nodes_to_values(nodes):
+        return torch.fx.map_arg(nodes, lambda node: d[node])
     for node in gm.graph.nodes:
-        if _is_foldable_node(node):
-            if node.op == "get_attr":
-                target = str(node.target)
-                paths = target.split(".")
-                result = gm
-                for path in paths:
-                    result = getattr(result, path)
-                d[node] = result
-            elif node.op == "call_function":
+        if node.op == "get_attr":
+            paths = node.target.split(".")
+            result = gm
+            for path in paths:
+                result = getattr(result, path)
+            d[node] = result
+        elif _is_foldable_node(node):
+            if node.op == "call_function":
                 target: torch.fx.node.Target = node.target
-                args = torch.fx.node.map_arg(node.args, lambda arg: d.get(arg))
-                kwargs = node.kwargs
+                args = map_nodes_to_values(node.args)
+                kwargs = map_nodes_to_values(node.kwargs)
                 result = target(*args, **kwargs)
                 d[node] = result
             elif node.op == "call_method":
-                target, *args = node.args
-                args = torch.fx.node.map_arg(args, lambda arg: d.get(arg))
-                kwargs = node.kwargs
-                result = target(*args, **kwargs)
+                target: str = node.target
+                obj, *args = map_nodes_to_values(node.args)
+                kwargs = map_nodes_to_values(node.kwargs)
+                result = getattr(obj, target)(*args, **kwargs)
                 d[node] = result
-            gm.register_buffer(str(node) + "_new", d[node])
-            with gm.graph.inserting_before(node):
-                new_node = gm.graph.get_attr(str(node) + "_new")
-                node.replace_all_uses_with(new_node)
             foldable_node_found = True
+    for node in gm.graph.nodes:
+        if node in d:
+            gm.register_buffer("_" + str(node), d[node])
+            with gm.graph.inserting_before(node):
+                new_node = gm.graph.get_attr("_" + str(node))
+                node.replace_all_uses_with(new_node)
+                d[new_node] = d[node]
     return foldable_node_found
 
 
