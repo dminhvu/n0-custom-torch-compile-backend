@@ -11,83 +11,133 @@ import torch.fx as fx
 import torch.fx.node
 
 # Largest tensor fold_constants may produce, in elements (numel). Justify the value here.
-FOLD_SIZE_CAP: int = 1e6  # TODO
-NON_FOLDABLE_METHODS = ["rand", "randn", "randint", "randperm", "randperm", "rand_like", "bernoulli", "dropout"]
+FOLD_SIZE_CAP: int = 1_000_000  # max 10^6 elements per Tensor: max 8 bytes/element (float64/int64) * 10^6 elements ~ 7.6 MB
+STATEFUL_OPS = ["rand", "randn", "randint", "randperm", "rand_like", "bernoulli", "dropout"]
+
+def _get_target_name(target) -> str:
+    if isinstance(target, str):
+        return target
+
+    return getattr(target, "__name__", str(target))
 
 def _is_side_effecting_node(node: fx.Node) -> bool:
-    op_name = node.target if isinstance(node.target, str) else node.target.__name__
-    
-    return True if op_name.endswith("_") or node.is_impure() else False
+    op_name = _get_target_name(node.target)
 
-def _is_foldable_node(node: fx.Node) -> bool:
-    if _is_side_effecting_node(node):
-        return False
-    op_name = node.target if isinstance(node.target, str) else node.target.__name__
-    if op_name in NON_FOLDABLE_METHODS:
-        return False
-    input_nodes = node.all_input_nodes
-    for node in input_nodes:
-        if not node.op == 'get_attr':
-            return False
-
-    return True
+    if op_name.endswith("_") and not op_name.endswith("__"):
+        return True
+    if hasattr(node, "is_impure") and node.is_impure():
+        return True
+    return False
 
 def dce(graph: fx.Graph) -> bool:
-    dead_code_found = False
+    """
+    Perform dead-code elimination.
+    A node is considered dead if it is not a side-effecting node and it doesn't have any user.
+    """
+    changed = False
     node: fx.Node
-    for node in reversed(graph.nodes):
-        if not _is_side_effecting_node(node) and not node.users:
-            graph.erase_node(node)
-            dead_code_found = True            
+    while True:
+        local_change = False
+        for node in reversed(list(graph.nodes)):
+            if _is_side_effecting_node(node):
+                continue
+            if len(node.users) == 0:
+                graph.erase_node(node)
+                changed = True            
+                local_change = True
+        if not local_change:
+            break
 
-    return dead_code_found
+    return changed
 
 
 def cse(graph: fx.Graph) -> bool:
     raise NotImplementedError
 
 
-
 def fold_constants(gm: fx.GraphModule) -> bool:
-    foldable_node_found = False
-    d = {}
+    changed = False
+    env = {}
     node: fx.Node
-    def map_nodes_to_values(nodes):
-        return torch.fx.map_arg(nodes, lambda node: d[node])
-    for node in gm.graph.nodes:
-        if node.op == "get_attr":
-            paths = node.target.split(".")
-            result = gm
-            for path in paths:
-                result = getattr(result, path)
-            d[node] = result
-        elif _is_foldable_node(node):
-            if node.op == "call_function":
-                target: torch.fx.node.Target = node.target
-                args = map_nodes_to_values(node.args)
-                kwargs = map_nodes_to_values(node.kwargs)
+
+    def resolve_arg(arg):
+        if isinstance(arg, fx.Node):
+            return env.get(arg), arg in env
+        elif isinstance(arg, (tuple, list)):
+            resolved = [resolve_arg(a) for a in arg]
+            vals = [r[0] for r in resolved]
+            all_const = all(r[1] for r in resolved)
+            return type(arg)(vals), all_const
+        elif isinstance(arg, dict):
+            resolved = {k: resolve_arg(v) for k, v in arg.items()}
+            vals = {k: v[0] for k, v in resolved.items()}
+            all_const = all(v[1] for v in resolved.values())
+            return vals, all_const
+        else:
+            return arg, True
+    
+    for node in list(gm.graph.nodes):
+        # 'placeholder' and 'output' nodes are not candidates to be folded
+        if node.op in ["placeholder", "output"] or _is_side_effecting_node(node):
+            continue
+
+        op_name = _get_target_name(node.target)
+        if op_name in STATEFUL_OPS:
+            continue
+
+        target = node.target
+        
+        if node.op == "get_attr": # already a constant node, only retrieve the actual tensor
+            result = getattr(gm, target)
+            if isinstance(result, torch.Tensor) and result.numel() > FOLD_SIZE_CAP:
+                continue
+            env[node] = result
+        elif node.op in ["call_function", "call_method"]: # candidates to be folded
+            if any(_is_side_effecting_node(user) for user in list(node.users)):
+                continue     
+
+            args, args_const = resolve_arg(node.args)
+            kwargs, kwargs_const = resolve_arg(node.kwargs)
+
+            if not (args_const and kwargs_const):
+                continue
+
+            if node.op == "call_function":           
                 result = target(*args, **kwargs)
-                d[node] = result
             elif node.op == "call_method":
-                target: str = node.target
-                obj, *args = map_nodes_to_values(node.args)
-                kwargs = map_nodes_to_values(node.kwargs)
+                obj, *args = args
                 result = getattr(obj, target)(*args, **kwargs)
-                d[node] = result
-            foldable_node_found = True
-    for node in gm.graph.nodes:
-        if node in d:
-            gm.register_buffer("_" + str(node), d[node])
+
+            if isinstance(result, torch.Tensor) and result.numel() > FOLD_SIZE_CAP:
+                continue
+            
             with gm.graph.inserting_before(node):
-                new_node = gm.graph.get_attr("_" + str(node))
+                if isinstance(result, torch.Tensor):
+                    name = f"_folded_{str(node)}"
+                    gm.register_buffer(name, result)
+                    new_node = gm.graph.get_attr(name)
+                    env[new_node] = result
+                else:
+                    new_node = result
+
+            if isinstance(new_node, fx.Node):
                 node.replace_all_uses_with(new_node)
-                d[new_node] = d[node]
-    return foldable_node_found
+            else:
+                for user in list(node.users):
+                    user.replace_input_with(node, new_node)
+
+            env[node] = result
+            gm.graph.erase_node(node)
+            changed = True
+
+    return changed
 
 
 def optimize(gm: fx.GraphModule) -> fx.GraphModule:
-    raise NotImplementedError
-    fold_constants(gm)
-    # cse(gm.graph)
-    dce(gm.graph)
+    while True:
+        fc_changed = fold_constants(gm)
+        # cse(gm.graph)
+        dce_changed = dce(gm.graph)
+        if not (fc_changed or dce_changed):
+            break
     return gm
