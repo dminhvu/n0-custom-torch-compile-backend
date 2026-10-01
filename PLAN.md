@@ -160,3 +160,7 @@ Score 0 / 1.5 / 2.5 per question — zero if you'd have to look it up.
   extension; breaks "no third weekend"). Learned: keep one source of truth for constness — evaluate into a
   Node→value map, rewrite after. Stuck: constness check still reads `op == get_attr` not the map; loop 2
   re-buffers get_attrs (A2); `call_method` obj unmapped; MutatedConst; cap is float. `optimize` still unwritten (20 pts).
+- 2026-10-01 · Fold fixed: constness = membership in the value map, in-place users block folding (A1 MutatedConst green,
+  B2 10/10); first `optimize` loop (fold → dce). Grader 38.5/70. Learned: folding assumes "compute once = compute every
+  call", which breaks when anything writes into the value. Stuck: `optimize` lacks `recompile` (4 A1 fails) and
+  `cse` (blocks A2); writes through a view still slip past the fold guard; `dce` grew a redundant outer loop. Next: CSE.
