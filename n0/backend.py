@@ -17,7 +17,6 @@ from n0.passes import optimize
 def n0_backend(gm: fx.GraphModule, example_inputs: list[torch.Tensor]) -> Callable:
     print(gm.graph)
     gm = optimize(gm)
-    gm.recompile()
     print(gm.graph)
     return gm.forward
 

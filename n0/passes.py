@@ -36,17 +36,12 @@ def dce(graph: fx.Graph) -> bool:
     """
     changed = False
     node: fx.Node
-    while True:
-        local_change = False
-        for node in reversed(list(graph.nodes)):
-            if _is_side_effecting_node(node):
-                continue
-            if len(node.users) == 0:
-                graph.erase_node(node)
-                changed = True            
-                local_change = True
-        if not local_change:
-            break
+    for node in reversed(list(graph.nodes)):
+        if _is_side_effecting_node(node):
+            continue
+        if len(node.users) == 0:
+            graph.erase_node(node)
+            changed = True            
 
     return changed
 
@@ -138,6 +133,7 @@ def optimize(gm: fx.GraphModule) -> fx.GraphModule:
         fc_changed = fold_constants(gm)
         # cse(gm.graph)
         dce_changed = dce(gm.graph)
+        gm.recompile()
         if not (fc_changed or dce_changed):
             break
     return gm
