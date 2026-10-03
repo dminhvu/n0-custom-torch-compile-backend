@@ -46,9 +46,6 @@ def test_dead_chain_removed():
     assert torch.allclose(gm(x), expected)
 
 
-# --- Your turn: modules are ready, write the assertions ----------------------
-
-
 class InplaceNoUsers(torch.nn.Module):
     """`y.add_(1)` has no users but mutates y, which is returned. Must survive."""
 

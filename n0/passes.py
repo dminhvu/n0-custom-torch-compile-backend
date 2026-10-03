@@ -7,6 +7,8 @@ Signatures are the contract; everything else (helpers, names, structure) is your
 """
 
 
+from typing import Union
+
 import torch.fx as fx
 import torch.fx.node
 
@@ -14,7 +16,7 @@ import torch.fx.node
 FOLD_SIZE_CAP: int = 1_000_000  # max 10^6 elements per Tensor: max 8 bytes/element (float64/int64) * 10^6 elements ~ 7.6 MB
 STATEFUL_OPS = ["rand", "randn", "randint", "randperm", "rand_like", "bernoulli", "dropout"]
 
-def _get_target_name(target) -> str:
+def _get_target_name(target: torch.fx.node.Target) -> str:
     if isinstance(target, str):
         return target
 
@@ -28,6 +30,14 @@ def _is_side_effecting_node(node: fx.Node) -> bool:
     if hasattr(node, "is_impure") and node.is_impure():
         return True
     return False
+
+def _is_pure_node(node: fx.Node) -> bool:
+    """
+    A node is "pure" if:
+    - it is not a side effecting node
+    - it is a deterministic node
+    """
+    return not _is_side_effecting_node(node) and _get_target_name(node.target) not in STATEFUL_OPS
 
 def dce(graph: fx.Graph) -> bool:
     """
@@ -47,7 +57,33 @@ def dce(graph: fx.Graph) -> bool:
 
 
 def cse(graph: fx.Graph) -> bool:
-    raise NotImplementedError
+    changed = False
+    node: fx.Node
+    computed = {}
+
+    def build_key(node: fx.Node) -> tuple:
+        return (node.op, node.target, str(node.args), str(node.kwargs))
+
+    for node in list(graph.nodes):
+        key = build_key(node)
+        if not _is_pure_node(node):
+            if len(node.args) > 1:
+                obj, *_ = node.args
+                if isinstance(obj, fx.Node):
+                    for user in list(obj.users):
+                        key = build_key(user)
+                        if key in computed:
+                            del computed[key]
+            continue
+
+        if key in computed:
+            changes = node.replace_all_uses_with(computed[key])
+            if len(changes) > 0:
+                changed = True
+        else:
+            computed[key] = node
+
+    return changed
 
 
 def fold_constants(gm: fx.GraphModule) -> bool:
@@ -55,7 +91,7 @@ def fold_constants(gm: fx.GraphModule) -> bool:
     env = {}
     node: fx.Node
 
-    def resolve_arg(arg):
+    def resolve_arg(arg: Union[fx.Node, tuple, list, dict, bool, int, float]) -> tuple:
         if isinstance(arg, fx.Node):
             return env.get(arg), arg in env
         elif isinstance(arg, (tuple, list)):
@@ -73,11 +109,7 @@ def fold_constants(gm: fx.GraphModule) -> bool:
     
     for node in list(gm.graph.nodes):
         # 'placeholder' and 'output' nodes are not candidates to be folded
-        if node.op in ["placeholder", "output"] or _is_side_effecting_node(node):
-            continue
-
-        op_name = _get_target_name(node.target)
-        if op_name in STATEFUL_OPS:
+        if node.op in ["placeholder", "output"] or not _is_pure_node(node):
             continue
 
         target = node.target
@@ -115,11 +147,7 @@ def fold_constants(gm: fx.GraphModule) -> bool:
                 else:
                     new_node = result
 
-            if isinstance(new_node, fx.Node):
-                node.replace_all_uses_with(new_node)
-            else:
-                for user in list(node.users):
-                    user.replace_input_with(node, new_node)
+            node.replace_all_uses_with(new_node)
 
             env[node] = result
             gm.graph.erase_node(node)
@@ -131,9 +159,9 @@ def fold_constants(gm: fx.GraphModule) -> bool:
 def optimize(gm: fx.GraphModule) -> fx.GraphModule:
     while True:
         fc_changed = fold_constants(gm)
-        # cse(gm.graph)
+        cse_changed = cse(gm.graph)
         dce_changed = dce(gm.graph)
         gm.recompile()
-        if not (fc_changed or dce_changed):
+        if not (fc_changed or dce_changed or cse_changed):
             break
     return gm
