@@ -162,3 +162,11 @@ Score 0 / 1.5 / 2.5 per question — zero if you'd have to look it up.
   filled (uncommitted) → M2 ticked. Probed: 2-layer MLP 3→3 call nodes under torch.compile (params lifted), attention
   block with in-forward causal mask 16→13; folded intermediates (`_folded_ones`, `_folded_mul`) stay registered on gm.
   Next: tests, README edits, repo cleanup, D quiz, ship before lectures 13 Oct.
+- 2026-10-09 · Authorship audit from session logs: README L1–19 yours, rest (CSE/DCE/fixpoint, demo, table, caveat,
+  known issues) Claude-written 5 Oct; grader + pass/backend stub docstrings Claude's. Grader still 66.7/70 (C2 only).
+  Confirmed still broken: CSE across `relu_`, CSE across a view write, DCE erases `out=` writes. Left: fold/cse/compile
+  tests, bug fix, README in own voice, cleanup, D quiz.
+- 2026-10-12 · Tests: DCE 6 (+ no-dead-work, unused input, impure fn), `test_fold.py` started (2). Grader 65.0/70: suite red
+  (`test_call_function_folded`: symbolic_trace already computes `2 * 3`, nothing left to fold), no cse/compile test yet.
+  Learned: unit vs integration, judging tests ("would it fail if the code were wrong?"). Next (13 Oct, last session):
+  fix fold tests via buffers, test_cse + torch.compile test, relu_ bug, fixtures refactor, README voice, D quiz.
