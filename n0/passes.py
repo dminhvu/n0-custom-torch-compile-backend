@@ -12,8 +12,8 @@ from typing import Union
 import torch.fx as fx
 import torch.fx.node
 
-# Largest tensor fold_constants may produce, in elements (numel). Justify the value here.
-FOLD_SIZE_CAP: int = 1_000_000  # max 10^6 elements per Tensor: max 8 bytes/element (float64/int64) * 10^6 elements ~ 7.6 MB
+# Largest tensor fold_constants may produce, in elements (numel).
+FOLD_SIZE_CAP: int = 1_000_000  # Max 10^6 elements per Tensor: max 8 bytes/element (float64/int64) * 10^6 elements ~ 7.6 MB
 STATEFUL_OPS = ["rand", "randn", "randint", "randperm", "rand_like", "bernoulli", "dropout"]
 
 def _get_target_name(target: torch.fx.node.Target) -> str:
