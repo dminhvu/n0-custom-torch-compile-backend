@@ -2,12 +2,8 @@ import torch
 import torch.fx as fx
 
 from n0.passes import dce
+from tests.helpers import INPUT_SIZE, count_calls
 
-INPUT_SIZE = 100
-
-def count_calls(gm: fx.GraphModule) -> int:
-    """Number of call_* nodes: the ones DCE is allowed to remove."""
-    return sum(n.op.startswith("call_") for n in list(gm.graph.nodes))
 
 class DeadChain(torch.nn.Module):
     """3 call nodes are dead (sin -> cos -> mul, result unused), 1 is live (add)."""
@@ -30,6 +26,7 @@ def test_dead_chain_removed():
     assert changed
     assert before - count_calls(gm) == 3
     assert torch.allclose(gm(x), expected)
+    assert not gm.graph.eliminate_dead_code()
 
 
 class InplaceNoUsers(torch.nn.Module):
@@ -46,11 +43,19 @@ def test_inplace_survives():
     x = torch.randn(INPUT_SIZE)
     expected = model(x)
 
+    print("before", gm.graph)
+
     changed = dce(gm.graph)
     gm.recompile()
 
+    print("after", gm.graph)
+
     assert not changed # not changed means count_calls before == count_calls after
     assert torch.allclose(gm(x), expected)
+    
+    graph_dce_changed = gm.graph.eliminate_dead_code()
+    print("after 2", gm.graph)
+    assert graph_dce_changed # torch still removes unused add_
 
 
 class FanOut(torch.nn.Module):
@@ -75,6 +80,7 @@ def test_fan_out_keeps_shared_node():
     assert changed
     assert before - after == 1
     assert torch.allclose(gm(x), expected)
+    assert not gm.graph.eliminate_dead_code()
 
 class NoDeadWork(torch.nn.Module):
     """The chain is complete and no dead-code found, `changed` should be `False`."""
@@ -94,6 +100,7 @@ def test_no_dead_work_not_changed():
 
     assert not changed
     assert torch.allclose(gm(x), expected)
+    assert not gm.graph.eliminate_dead_code()
 
 class UnusedInput(torch.nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -111,11 +118,11 @@ def test_unused_input_survives():
 
     assert not changed
     assert torch.allclose(gm(x, y), expected)
+    assert not gm.graph.eliminate_dead_code()
 
 class ImpureFunction(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = torch.Tensor([1, 2, 3])
-        torch._assert(isinstance(y, torch.Tensor), f"y must be a torch.Tensor, found: {type(y)}")
+        torch._assert(x.numel() > 0, "empty")
         return x
 
 def test_impure_function_survives():
@@ -129,3 +136,4 @@ def test_impure_function_survives():
 
     assert not changed
     assert torch.allclose(gm(x), expected)
+    assert not gm.graph.eliminate_dead_code()
