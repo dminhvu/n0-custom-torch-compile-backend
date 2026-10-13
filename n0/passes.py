@@ -29,6 +29,8 @@ def _is_side_effecting_node(node: fx.Node) -> bool:
         return True
     if hasattr(node, "is_impure") and node.is_impure():
         return True
+    if "out" in node.kwargs:
+        return True
     return False
 
 def _is_pure_node(node: fx.Node) -> bool:
@@ -67,13 +69,15 @@ def cse(graph: fx.Graph) -> bool:
     for node in list(graph.nodes):
         key = build_key(node)
         if not _is_pure_node(node):
-            if len(node.args) > 1:
-                obj, *_ = node.args
-                if isinstance(obj, fx.Node):
-                    for user in list(obj.users):
-                        key = build_key(user)
-                        if key in computed:
-                            del computed[key]
+            obj = None
+            if len(node.args) >= 1:
+                obj = node.args[0]
+
+            if isinstance(obj, fx.Node):
+                for user in list(obj.users):
+                    key = build_key(user)
+                    if key in computed:
+                        del computed[key]
             continue
 
         if key in computed:
