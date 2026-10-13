@@ -109,6 +109,6 @@ Folding a subexpression that only uses model parameters bakes the current weight
 
 ## Known issues
 
-- CSE can merge two reads of a tensor across a single-argument in-place operation like `y.relu_()`, because only in-place calls with more than one argument clear the seen keys. Example: `y.sin(); y.relu_(); y.sin()` gives a different result from eager PyTorch.
-- CSE also doesn't see writes through a view: after `v = y.view(-1); v.add_(1)`, a later `y.sin()` can still be merged with an earlier one.
-- DCE removes a call that writes into an `out=` argument (`torch.add(x, 1, out=y)`), since it has no users and no `_` suffix.
+- CSE doesn't see writes through a view: after `v = y.view(-1); v.add_(1)`, a later `y.sin()` can still be merged with an earlier one.
+- CSE doesn't see writes into an `out=` argument: `a = y * 2; torch.add(x, 1, out=y); b = y * 2` merges `b` into `a`.
+- Constant folding doesn't see writes through a view of a folded value: `y = c * 2; y.view(-1).add_(1)` folds `y` once, and the write then changes the stored buffer on every call, so the result drifts.

@@ -83,19 +83,19 @@ assert it finds nothing left. Same idea with `torch.fx.passes` for CSE if it exi
 
 ### A · Correctness — 30
 - [ ] 10 — every test module: compiled output `allclose` to eager, including a parameter-heavy one
-- [ ] 10 — passes are **idempotent**: running the pipeline twice changes nothing on the second run
-- [ ] 5 — an in-place op in the test graph survives DCE, and the result is still correct
-- [ ] 5 — reference `eliminate_dead_code()` finds nothing after your DCE, on every test
+- [x] 10 — passes are **idempotent**: running the pipeline twice changes nothing on the second run
+- [x] 5 — an in-place op in the test graph survives DCE, and the result is still correct
+- [x] 5 — reference `eliminate_dead_code()` finds nothing after your DCE, on every test
 
 ### B · The passes — 30
-- [ ] 10 — DCE: correct reverse walk, side-effect check, no special-casing by node name
+- [x] 10 — DCE: correct reverse walk, side-effect check, no special-casing by node name
 - [ ] 10 — folding: constant detection is recursive over args, nondeterminism excluded, size cap
       justified in a comment, folded values become `get_attr`
 - [ ] 10 — CSE: real value numbering (not string-compare of `repr(node)`), kwargs and list-args
       handled, only pure nodes merged
 
 ### C · Engineering — 15
-- [ ] 5 — core ≤ ~300 lines, one function per pass over `fx.Graph`, type hints, no dead flags
+- [x] 5 — core ≤ ~300 lines, one function per pass over `fx.Graph`, type hints, no dead flags
 - [ ] 5 — `pytest` green, one test file per pass, one integration test through `torch.compile`
 - [ ] 5 — README: what it is, how to run, before/after dump, node counts, the freezing caveat;
       commit history reads as a sequence of steps
@@ -170,3 +170,12 @@ Score 0 / 1.5 / 2.5 per question — zero if you'd have to look it up.
   (`test_call_function_folded`: symbolic_trace already computes `2 * 3`, nothing left to fold), no cse/compile test yet.
   Learned: unit vs integration, judging tests ("would it fail if the code were wrong?"). Next (13 Oct, last session):
   fix fold tests via buffers, test_cse + torch.compile test, relu_ bug, fixtures refactor, README voice, D quiz.
+- 2026-10-13 · `test_fold.py` reworked (6 tests, `tests/helpers.py` trace helper), suite green 12/12, grader 66.7/70
+  (uncommitted). Dropout test verified to catch a broken denylist. Learned: `symbolic_trace` proxies parameters but
+  not buffers (`proxy_buffer_attributes`); torch's `is_impure()` already covers `rand_like`. Next: test_cse,
+  torch.compile test, relu_ bug, commit.
+- 2026-10-13 (2) · `test_cse.py` (4 tests), DCE tests use the torch reference, `_assert` test made data-dependent. Fixed CSE
+  across one-arg in-place ops (`neg_`) and DCE keeping `out=` writes. Grader 68.3/70 (C2: no torch.compile test). Ticked
+  A2–A4, B1, C1. Learned: views alias storage, so the graph's nodes ≠ memory; a test is only proof if it fails on the old
+  code (both in-place CSE tests rebind `x`, so they never had a duplicate). Open: CSE across view write, fold + view write
+  (drifts per call), CSE across `out=`; integration test; fix the two vacuous CSE tests; README voice; D quiz.
