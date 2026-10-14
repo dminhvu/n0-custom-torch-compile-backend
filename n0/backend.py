@@ -1,6 +1,5 @@
-"""The torch.compile backend. You write this — PLAN.md § Spec, milestone M1.
+"""The torch.compile backend.
 
-Contract the grader relies on:
 - `n0_backend` optimizes `gm` in place (via `passes.optimize`) and returns a callable;
 - importing this module registers the backend under the name "n0",
   so `torch.compile(model, backend="n0")` works.

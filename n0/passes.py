@@ -1,9 +1,7 @@
-"""Constant folding, CSE, DCE and the fixpoint driver. You write these — PLAN.md § Spec.
+"""Constant folding, CSE, DCE and the fixpoint driver.
 
-Contract the grader relies on (`uv run python -m grader`):
 - every pass mutates the graph in place and returns True iff it changed anything;
 - `optimize` runs fold_constants → cse → dce until nothing changes, recompiles `gm`, returns it.
-Signatures are the contract; everything else (helpers, names, structure) is yours.
 """
 
 
