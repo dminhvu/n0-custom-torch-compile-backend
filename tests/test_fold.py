@@ -178,8 +178,12 @@ def test_inplace_method_not_folded():
     assert not changed_second
 
 class ImpureChain(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("c", torch.ones(INPUT_SIZE) * 5 + 2)
+        
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        t = torch.ones(INPUT_SIZE) * 2
+        t = self.c * 2
         t[0:50].add_(1)        # slicing returns a view, so this writes into t
         return x + t
 
