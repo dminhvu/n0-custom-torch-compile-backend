@@ -73,17 +73,22 @@ def cse(graph: fx.Graph) -> bool:
                 obj = node.kwargs.get("out") or node.args[0]
 
             if isinstance(obj, fx.Node):
-                # all users of an impure node must be erased from the computed cache to avoid further use
-                for user in list(obj.users):
-                    key = build_key(user)
-                    if key in computed:
-                        del computed[key]
-                if _get_target_name(obj.target) in VIEW_OPS:
-                    for inp in list(obj.all_input_nodes):
-                        for user in list(inp.users):
-                            key = build_key(user)
-                            if key in computed:
-                                del computed[key]
+                base = obj
+                while _get_target_name(base.target) in VIEW_OPS:
+                    base = base.args[0]
+                aliases = [base]
+                queue = [base]
+                while len(queue) > 0:
+                    candidate = queue.pop(0)
+                    for user in list(candidate.users):
+                        if _get_target_name(user.target) in VIEW_OPS:
+                            aliases.append(user)
+                            queue.append(user)
+                for alias in aliases:
+                    for user in list(alias.users):
+                        key = build_key(user)
+                        if key in computed:
+                            del computed[key]
             continue
 
         if key in computed:

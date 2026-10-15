@@ -5,9 +5,6 @@ from tests.helpers import INPUT_SIZE, get_target_name, trace
 
 
 class MergeableNodes(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         a = (x + 2).relu()
         b = (x + 2).relu()
@@ -48,9 +45,6 @@ def test_mergeable_nodes_merged():
 
 
 class StatefulOps(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         a = torch.rand_like(x)
         b = torch.rand_like(x)
@@ -89,9 +83,6 @@ def test_stateful_ops_not_merged():
     assert not changed_second
 
 class ImpureNodesBetween(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         a = x + 2
         x.add_(5)
@@ -132,9 +123,6 @@ def test_impure_nodes_between_not_merged():
 
 
 class ImpureNodesNoArgsBetween(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         a = x + 2
         x.neg_()
@@ -156,6 +144,87 @@ def test_impure_nodes_no_args_between_not_merged():
     print("after", gm.graph)
 
     assert not changed
+    filtered_nodes = list(filter(
+        lambda n: n.name in ("add", "add_1") and n.op == "call_function",
+        list(gm.graph.nodes)
+    ))
+    assert len(filtered_nodes) == 2
+    add_node, add_1_node = filtered_nodes
+    print(gm.graph)
+    assert get_target_name(add_node) == "add"
+    assert len(add_node.users) == 1
+    assert get_target_name(add_1_node) == "add_1"
+    assert len(add_1_node.users) == 1
+
+    # Idempotency check
+    changed_second = cse(gm.graph)
+
+    assert not changed_second
+
+class ViewNode(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        a = x + 1
+        x.view(-1)[0:4].add_(5)
+        b = x + 1
+        return a + b
+
+
+def test_view_node_not_merged():
+    model = ViewNode().eval()
+    gm = trace(model)
+    x = torch.randn(INPUT_SIZE)
+    expected = model(x.clone())
+
+    print("before", gm.graph)
+     
+    changed = cse(gm.graph)
+    gm.recompile()
+
+    print("after", gm.graph)
+
+    assert not changed
+    assert torch.allclose(gm(x.clone()), expected)
+    filtered_nodes = list(filter(
+        lambda n: n.name in ("add", "add_1") and n.op == "call_function",
+        list(gm.graph.nodes)
+    ))
+    assert len(filtered_nodes) == 2
+    add_node, add_1_node = filtered_nodes
+    print(gm.graph)
+    assert get_target_name(add_node) == "add"
+    assert len(add_node.users) == 1
+    assert get_target_name(add_1_node) == "add_1"
+    assert len(add_1_node.users) == 1
+
+    # Idempotency check
+    changed_second = cse(gm.graph)
+
+    assert not changed_second
+
+class ViewWritesToBaseNode(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        v = x.view(-1)
+        a = v + 1
+        x.add_(5)
+        b = v + 1
+        return a + b
+
+
+def test_view_writes_to_base_node_not_merged():
+    model = ViewWritesToBaseNode().eval()
+    gm = trace(model)
+    x = torch.randn(INPUT_SIZE)
+    expected = model(x.clone())
+
+    print("before", gm.graph)
+     
+    changed = cse(gm.graph)
+    gm.recompile()
+
+    print("after", gm.graph)
+
+    assert not changed
+    assert torch.allclose(gm(x.clone()), expected)
     filtered_nodes = list(filter(
         lambda n: n.name in ("add", "add_1") and n.op == "call_function",
         list(gm.graph.nodes)
