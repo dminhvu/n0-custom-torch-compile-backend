@@ -1,5 +1,4 @@
 import torch
-import torch.fx as fx
 
 from n0.passes import cse
 from tests.helpers import INPUT_SIZE, get_target_name, trace
@@ -94,10 +93,10 @@ class ImpureNodesBetween(torch.nn.Module):
         super().__init__()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + 2
+        a = x + 2
         x.add_(5)
         b = x + 2
-        return x + b
+        return a * b
 
 
 def test_impure_nodes_between_not_merged():
@@ -122,7 +121,7 @@ def test_impure_nodes_between_not_merged():
     add_node, add_1_node = filtered_nodes
     print(gm.graph)
     assert get_target_name(add_node) == "add"
-    assert len(add_node.users) == 3
+    assert len(add_node.users) == 1
     assert get_target_name(add_1_node) == "add_1"
     assert len(add_1_node.users) == 1
 
@@ -137,14 +136,14 @@ class ImpureNodesNoArgsBetween(torch.nn.Module):
         super().__init__()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + 2
+        a = x + 2
         x.neg_()
         b = x + 2
-        return x + b
+        return a * b
 
 
 def test_impure_nodes_no_args_between_not_merged():
-    model = ImpureNodesBetween().eval()
+    model = ImpureNodesNoArgsBetween().eval()
     gm = trace(model)
     x = torch.randn(INPUT_SIZE)
     _ = model(x)
@@ -165,7 +164,7 @@ def test_impure_nodes_no_args_between_not_merged():
     add_node, add_1_node = filtered_nodes
     print(gm.graph)
     assert get_target_name(add_node) == "add"
-    assert len(add_node.users) == 3
+    assert len(add_node.users) == 1
     assert get_target_name(add_1_node) == "add_1"
     assert len(add_1_node.users) == 1
 

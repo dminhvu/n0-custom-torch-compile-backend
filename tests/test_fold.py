@@ -1,5 +1,4 @@
 import torch
-import torch.fx as fx
 
 from n0.passes import fold_constants
 from tests.helpers import INPUT_SIZE, trace, get_target_name
@@ -172,6 +171,31 @@ def test_inplace_method_not_folded():
     gm.recompile()
 
     assert not changed
+
+    # Idempotency check
+    changed_second = fold_constants(gm)
+
+    assert not changed_second
+
+class ImpureChain(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        t = torch.ones(INPUT_SIZE) * 2
+        t[0:50].add_(1)        # slicing returns a view, so this writes into t
+        return x + t
+
+def test_impure_chain_not_folded():
+    model = ImpureChain().eval()
+    gm = trace(model)
+    x = torch.randn(INPUT_SIZE)
+    expected = model(x)
+    
+    changed = fold_constants(gm)
+    gm.recompile()
+
+    assert not changed
+    assert torch.allclose(gm(x), expected)
+    assert torch.allclose(gm(x), expected)
+    assert torch.allclose(gm(x), expected)
 
     # Idempotency check
     changed_second = fold_constants(gm)

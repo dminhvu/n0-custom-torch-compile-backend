@@ -137,3 +137,27 @@ def test_impure_function_survives():
     assert not changed
     assert torch.allclose(gm(x), expected)
     assert not gm.graph.eliminate_dead_code()
+
+class WriteToOut(torch.nn.Module):
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        torch.add(x, 3, out=y)
+        return x + y
+
+def test_write_to_out_survives():
+    model = WriteToOut().eval()
+    gm = fx.symbolic_trace(model)
+    x = torch.randn(INPUT_SIZE)
+    y = torch.randn(INPUT_SIZE)
+    expected = model(x, y)
+
+    print("before", gm.graph)
+
+    changed = dce(gm.graph)
+    gm.recompile()
+
+    print("after", gm.graph)
+
+    assert not changed
+    assert torch.allclose(gm(x, y), expected)
+
+    assert gm.graph.eliminate_dead_code()
