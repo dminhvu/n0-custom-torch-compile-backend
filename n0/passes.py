@@ -13,6 +13,7 @@ import torch.fx.node
 # Largest tensor fold_constants may produce, in elements (numel).
 FOLD_SIZE_CAP: int = 1_000_000  # Max 10^6 elements per Tensor: max 8 bytes/element (float64/int64) * 10^6 elements ~ 7.6 MB
 STATEFUL_OPS = ["rand", "randn", "randint", "randperm", "rand_like", "bernoulli", "dropout"]
+VIEW_OPS = ["view", "getitem", "t", "transpose", "expand", "squeeze", "permute"]
 
 def _get_target_name(target: torch.fx.node.Target) -> str:
     if isinstance(target, str):
@@ -69,13 +70,20 @@ def cse(graph: fx.Graph) -> bool:
         if not _is_pure_node(node):
             obj = None
             if len(node.args) >= 1:
-                obj = node.args[0]
+                obj = node.kwargs.get("out") or node.args[0]
 
             if isinstance(obj, fx.Node):
+                # all users of an impure node must be erased from the computed cache to avoid further use
                 for user in list(obj.users):
                     key = build_key(user)
                     if key in computed:
                         del computed[key]
+                if _get_target_name(obj.target) in VIEW_OPS:
+                    for inp in list(obj.all_input_nodes):
+                        for user in list(inp.users):
+                            key = build_key(user)
+                            if key in computed:
+                                del computed[key]
             continue
 
         if key in computed:
@@ -108,7 +116,17 @@ def fold_constants(gm: fx.GraphModule) -> bool:
             return vals, all_const
         else:
             return arg, True
-    
+
+    def has_side_effecting_users(node: fx.Node) -> bool:
+        queue = list(node.users)
+        while len(queue) > 0:
+            candidate = queue.pop(0)
+            if _is_side_effecting_node(candidate):
+                return True
+            if _get_target_name(candidate.target) in VIEW_OPS:
+                queue.extend(list(candidate.users))
+        return False
+
     for node in list(gm.graph.nodes):
         # 'placeholder' and 'output' nodes are not candidates to be folded
         if node.op in ["placeholder", "output"] or not _is_pure_node(node):
@@ -122,8 +140,8 @@ def fold_constants(gm: fx.GraphModule) -> bool:
                 continue
             env[node] = result
         elif node.op in ["call_function", "call_method"]: # candidates to be folded
-            if any(_is_side_effecting_node(user) for user in list(node.users)):
-                continue     
+            if has_side_effecting_users(node):
+                continue
 
             args, args_const = resolve_arg(node.args)
             kwargs, kwargs_const = resolve_arg(node.kwargs)
