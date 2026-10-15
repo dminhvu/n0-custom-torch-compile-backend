@@ -36,7 +36,7 @@ However, a node with no users is not always dead. An in-place operation like `y.
 
 ### Running the passes to a fixpoint
 
-`optimize()` runs fold → CSE → DCE in a loop until no pass changes the graph anymore, and then calls `gm.recompile()` to regenerate the Python code of the graph.
+`optimize()` runs fold > CSE > DCE in a loop until no pass changes the graph anymore, and then calls `gm.recompile()` to regenerate the Python code of the graph.
 
 ## How to run
 
@@ -107,8 +107,11 @@ Constant folding turned `torch.ones(3) * 2 + 1` into one buffer, CSE merged the 
 
 Folding a subexpression that only uses model parameters bakes the current weights into the graph. This is only correct for inference, when the weights don't change anymore (Inductor calls this *freezing*). Under `torch.compile`, Dynamo passes parameters into the graph as inputs (placeholders), so they are not folded there. They are only folded when the graph comes from `torch.fx.symbolic_trace`, where parameters are read with `get_attr`.
 
-## Known issues
+## Known limitations
 
-- CSE doesn't see writes through a view: after `v = y.view(-1); v.add_(1)`, a later `y.sin()` can still be merged with an earlier one.
-- CSE doesn't see writes into an `out=` argument: `a = y * 2; torch.add(x, 1, out=y); b = y * 2` merges `b` into `a`.
-- Constant folding doesn't see writes through a view of a folded value: `y = c * 2; y.view(-1).add_(1)` folds `y` once, and the write then changes the stored buffer on every call, so the result drifts.
+- The `VIEW_OPS` list only contains some common view operations: `view`, `transpose`, `permute`, etc. There are still many more view operations in PyTorch that are not handled.
+- The CSE pass does not handle chained view operations. For example, the following code creates a view of a view, and the second `view` is not merged with the first one:
+
+    ```python
+    x.view(-1)[0:4].add_(5) # (view of a view)
+    ```
