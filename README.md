@@ -110,17 +110,3 @@ Folding a subexpression that only uses model parameters bakes the current weight
 ## Known limitations
 
 - The `VIEW_OPS` list only contains some common view operations: `view`, `transpose`, `permute`, etc. There are still many more view operations in PyTorch that are not handled.
-- The CSE pass does not handle chained view operations. For example, the following code creates a view of a view, and wrongly merges the second `x + 1` with the first one, even though `x` is modified in between:
-
-    ```python
-    a = x + 1
-    x.view(-1)[0:4].add_(5) # (view of a view)
-    b = x + 1
-    ```
-    or when the view is cached but modified by its base:
-    ```python
-    v = x.view(-1)
-    a = v + 1
-    x.add_(5)    # write to the base
-    b = v + 1    # wrongly merged with a
-    ```
